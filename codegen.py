@@ -60,8 +60,8 @@ def compile_opt(path):
 def generate_code():
   shutil.rmtree(TMP, ignore_errors=True)
   ncpu = multiprocessing.cpu_count()
-  numtars = 1
-  numruns = 10
+  numtars = 100
+  numruns = 100
   for i in range(numtars):
     for j in range(numruns):
       with multiprocessing.dummy.Pool(ncpu) as p:

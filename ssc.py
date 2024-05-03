@@ -9,7 +9,14 @@ import torch.optim as optim
 import tqdm
 from torch.utils.data import DataLoader
 import tarfile
+import random
 from x_transformers import XTransformer
+
+
+from util import report_cuda_size, report_model_size
+
+
+
 
 if not torch.cuda.is_available():
     raise RuntimeError('CUDA is not available')
@@ -21,10 +28,10 @@ NUM_TOKENS = 261
 ENC_SEQ_LEN = 2048
 DEC_SEQ_LEN = 2048
 NUM_EPOCHS = 10
-BATCH_SIZE = 8
+BATCH_SIZE = 1
 LEARNING_RATE = 1e-4
 CHECKPOINT_EVERY = 1000
-GENERATE_EVERY = 100
+GENERATE_EVERY = 1000
 
 ENCSTART, ENCEND, DECSTART, DECEND, PAD = [256, 257, 258, 259, 260]
 
@@ -43,15 +50,20 @@ def detokenize(tokens: [int]):
 
 
 
-def getdata(path, batch_size=1):
-    opt_objs = []
-    unopt_objs = []
-    training_data = []
-    for targz in sorted(os.listdir(path)):
-        if not targz.endswith('.tar.gz'):
-            continue
-        print(f"loading {path}/{targz}")
-        with tarfile.open(targz, 'r:gz') as tar:
+def getdata(batch_size, training_data, tars):
+    if len(training_data) < batch_size:
+
+        tar = random.choice(tars)
+        tars.remove(tar)
+        if len(tars) == 0:
+            tars = os.listdir(f'{ROOTDIR}/data/')
+        opt_objs = []
+        unopt_objs = []
+        training_data = []
+        if not tar.endswith('.tar.gz'):
+            raise ValueError('only .tar.gz training data is allowed under data/')
+        print(f"loading {ROOTDIR}/data/{tar}")
+        with tarfile.open(f"{ROOTDIR}/data/{tar}", 'r:gz') as tar:
             # Get a list of file names in the archive
             file_names = tar.getnames()
             # Read a specific file from the archive
@@ -80,13 +92,14 @@ def getdata(path, batch_size=1):
                 unopt_tokens.extend([PAD] * (ENC_SEQ_LEN - len(unopt_tokens)))
                 opt_tokens.extend([PAD] * (DEC_SEQ_LEN - len(opt_tokens)))
                 training_data.append([unopt_tokens, opt_tokens, mask])
-        while len(training_data) > batch_size:
-            batch = training_data[:batch_size]
-            training_data = training_data[batch_size:]
-            mysrc = torch.tensor(list(x[0] for x in batch)).long().to(DEVICE)
-            mytgt = torch.tensor(list(x[1] for x in batch)).long().to(DEVICE)
-            mysrc_mask = torch.tensor(list(x[2] for x in batch)).bool().to(DEVICE)
-            yield mysrc, mysrc_mask, mytgt
+    while len(training_data) >= batch_size:
+        batch = training_data[:batch_size]
+        training_data = training_data[batch_size:]
+        mysrc = torch.tensor(list(x[0] for x in batch)).long().to(DEVICE)
+        mytgt = torch.tensor(list(x[1] for x in batch)).long().to(DEVICE)
+        mysrc_mask = torch.tensor(list(x[2] for x in batch)).bool().to(DEVICE)
+        return mysrc, mysrc_mask, mytgt, training_data, tars
+    assert False
 
 
 def train(rank):
@@ -105,17 +118,22 @@ def train(rank):
     dec_depth=4,
     dec_heads=4,
     dec_max_seq_len=DEC_SEQ_LEN)
+  model = torch.compile(model)
+  report_model_size(model)
 
   optim = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
   if DEVICE == 'cuda':
     scaler = torch.cuda.amp.GradScaler()
   scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim,T_0=100)
 
-  for i in tqdm.tqdm(range(5), mininterval=10., desc='training'):
+  training_data = []
+  tars = os.listdir(f'{ROOTDIR}/data')
+
+  for i in tqdm.tqdm(range(5000), mininterval=10., desc='training'):
     model.train()
     optim.zero_grad()
 
-    src, src_mask, tgt = next(getdata('.'))
+    src, src_mask, tgt, training_data, tars = getdata(BATCH_SIZE, training_data, tars)
     if DEVICE == 'cuda':
       with torch.cuda.amp.autocast(dtype=torch.bfloat16):
         loss = model(src, tgt, mask=src_mask)
@@ -133,8 +151,9 @@ def train(rank):
       pass
       #report_cuda_size()
     if i % GENERATE_EVERY == 0:
+        report_cuda_size()
         model.eval()
-        src, src_mask, tgt = next(getdata('.', 1))
+        src, src_mask, tgt, training_data, tars = getdata(BATCH_SIZE, training_data, tars)
         src, src_mask, tgt  = src[:1], src_mask[:1], tgt[:1]
         start_tokens = torch.tensor([DECSTART]).to(DEVICE)
         sample = model.generate(src, start_tokens, DEC_SEQ_LEN, mask = src_mask)
