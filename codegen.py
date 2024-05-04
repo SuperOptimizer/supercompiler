@@ -15,11 +15,11 @@ CCFLAGS = '-Wall -fcf-protection=none -fno-asynchronous-unwind-tables -fno-unwin
 def gen_yarpgen(_):
   path = f'{TMP}/{randstring(32)}'
   os.makedirs(path, exist_ok=False)
-  ret = run(f'/{ROOTDIR}/bin/{platform.system()}/yarpgen --std=c++ -o {path}'.split(), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+  ret = run(f'{ROOTDIR}/bin/{platform.system()}/yarpgen --std=c++ -o {path}'.split(), stdin=PIPE, stdout=PIPE, stderr=PIPE)
   return f"{path}/func.cpp"
 
 def gen_csmith(_):
-  ret = run(f'/{ROOTDIR}/bin/{platform.system()}/csmith --concise --max-funcs 1 --no-safe-math --nomain'.split(), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+  ret = run(f'{ROOTDIR}/bin/{platform.system()}/csmith --concise --max-funcs 1 --no-safe-math --nomain'.split(), stdin=PIPE, stdout=PIPE, stderr=PIPE)
   prog = ret.stdout.decode('utf-8')
   path = f'{TMP}/{randstring(32)}.o'
   with open(path,'wt') as f:
@@ -43,10 +43,10 @@ def gen_ccg(_):
   return path
 
 def compile(path, objpath, opt):
-  clang = f'clang++ -xc++ -stdlib=libc++ ' if path.endswith('.cpp') else f'clang -xc '
+  clang = f'clang++-18 -xc++ -stdlib=libc++ ' if path.endswith('.cpp') else f'clang -xc '
   clangret = run(f'{clang} -c {path} -o {objpath} {opt} {CCFLAGS} -include stdint.h'.split(), stdout=PIPE, stderr=PIPE)
-  stripret = run(f'llvm-strip {objpath}'.split(), stdout=PIPE, stderr=PIPE)
-  objcopyret = run(f'llvm-objcopy --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {objpath}'.split(), stdout=PIPE, stderr=PIPE)
+  stripret = run(f'llvm-strip-18 {objpath}'.split(), stdout=PIPE, stderr=PIPE)
+  objcopyret = run(f'llvm-objcopy-18 --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {objpath}'.split(), stdout=PIPE, stderr=PIPE)
   return f"{path}.o"
 
 def compile_unopt(path):
