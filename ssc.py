@@ -20,8 +20,8 @@ DEEPSPEED = True
 DEVICE = 'cuda'
 ROOTDIR = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 NUM_TOKENS = 261
-ENC_SEQ_LEN = 4096
-DEC_SEQ_LEN = 4096
+ENC_SEQ_LEN = 8192
+DEC_SEQ_LEN = 8192
 BATCH_SIZE = 1
 LEARNING_RATE = 1e-4
 CHECKPOINT_EVERY = 1000
@@ -46,7 +46,7 @@ def detokenize(tokens: [int]):
 class XTransformerDataset(Dataset):
     def __init__(self, rootdir):
         self.rootdir = rootdir
-        self.tars = list(sorted(os.listdir(f'{rootdir}/data/')))[:10]
+        self.tars = list(sorted(os.listdir(f'{rootdir}/data/')))[:100]
 
         self.training_data = []
         self.load_data()
