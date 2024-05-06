@@ -64,19 +64,18 @@ def generate_code():
   numruns = 20
   numexisting = len(os.listdir(f"{ROOTDIR}/data"))
   for i in range(numtars):
-    print(f"tar {i}")
-    for j in range(numruns):
-      with multiprocessing.dummy.Pool(ncpu) as p:
-        ret = p.map(gen_yarpgen, list(range(ncpu)))
-      with multiprocessing.dummy.Pool(ncpu) as p:
-        unopt = p.map(compile_unopt, ret)
-      with multiprocessing.dummy.Pool(ncpu) as p:
-        opt = p.map(compile_opt, ret)
+    print(f"tar {i+numexisting}")
+    with multiprocessing.dummy.Pool(ncpu) as p:
+      ret = p.map(gen_yarpgen, list(range(ncpu*numruns)))
+    with multiprocessing.dummy.Pool(ncpu) as p:
+      unopt = p.map(compile_unopt, ret)
+    with multiprocessing.dummy.Pool(ncpu) as p:
+      opt = p.map(compile_opt, ret)
     dirnum = 0
     for d in os.listdir(TMP):
       os.rename(os.path.join(TMP,d),os.path.join(TMP,str(dirnum)))
       dirnum+=1
-    with tarfile.open(f"/tmp/sopt{i+numexisting}.tar.gz", "w:gz") as tar:
+    with tarfile.open(f"/tmp/sopt{randstring(32)}.tar.gz", "w:gz") as tar:
       tar.add(TMP, arcname=os.path.basename(TMP))
     shutil.rmtree(TMP)
     print()
