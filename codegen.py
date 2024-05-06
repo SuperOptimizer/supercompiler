@@ -60,9 +60,11 @@ def compile_opt(path):
 def generate_code():
   shutil.rmtree(TMP, ignore_errors=True)
   ncpu = multiprocessing.cpu_count()
-  numtars = 100
-  numruns = 100
+  numtars = 10000
+  numruns = 20
+  numexisting = len(os.listdir(f"{ROOTDIR}/data"))
   for i in range(numtars):
+    print(f"tar {i}")
     for j in range(numruns):
       with multiprocessing.dummy.Pool(ncpu) as p:
         ret = p.map(gen_yarpgen, list(range(ncpu)))
@@ -74,7 +76,7 @@ def generate_code():
     for d in os.listdir(TMP):
       os.rename(os.path.join(TMP,d),os.path.join(TMP,str(dirnum)))
       dirnum+=1
-    with tarfile.open(f"/tmp/sopt{i}.tar.gz", "w:gz") as tar:
+    with tarfile.open(f"/tmp/sopt{i+numexisting}.tar.gz", "w:gz") as tar:
       tar.add(TMP, arcname=os.path.basename(TMP))
     shutil.rmtree(TMP)
     print()
