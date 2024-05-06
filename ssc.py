@@ -15,6 +15,8 @@ from deepspeed.ops.adam import DeepSpeedCPUAdam
 if not torch.cuda.is_available():
     raise Exception("cuda not available")
 
+DEEPSPEED = True
+
 DEVICE = 'cuda'
 ROOTDIR = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 NUM_TOKENS = 261
@@ -125,7 +127,7 @@ class XTransformerModule(pl.LightningModule):
             dec_heads=8,
             dec_max_seq_len=DEC_SEQ_LEN
         )
-        self.model = torch.compile(self.model)
+        #self.model = torch.compile(self.model)
 
     def forward(self, src, tgt, mask):
         return self.model(src, tgt, mask=mask)
@@ -144,8 +146,12 @@ class XTransformerModule(pl.LightningModule):
         self.log('val_loss', loss)
 
     def configure_optimizers(self):
-        # DeepSpeedCPUAdam provides 5x to 7x speedup over torch.optim.adam(w)
-        return DeepSpeedCPUAdam(self.parameters())
+        if DEEPSPEED:
+            return DeepSpeedCPUAdam(self.parameters())
+        else:
+            optim = torch.optim.Adam(self.parameters(), lr=LEARNING_RATE)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim, T_0=100)
+            return [optim], [scheduler]
 
     def generate(self, src, start_tokens, seq_len, mask):
         return self.model.generate(src, start_tokens, seq_len, mask=mask)
@@ -171,7 +177,8 @@ def main():
             pl.callbacks.ModelCheckpoint(monitor='val_loss', dirpath='checkpoints', save_top_k=1, mode='min'),
             pl.callbacks.LearningRateMonitor(logging_interval='epoch'),
             pl.callbacks.DeviceStatsMonitor(False),
-        ]
+        ],
+        #fast_dev_run=True
     )
 
     trainer.fit(model, dataloader, val_dataloaders=model.val_dataloader())
