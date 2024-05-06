@@ -15,7 +15,7 @@ from deepspeed.ops.adam import DeepSpeedCPUAdam
 if not torch.cuda.is_available():
     raise Exception("cuda not available")
 
-DEEPSPEED = True
+STRATEGY = 'deepspeed_stage_3_offload'
 
 DEVICE = 'cuda'
 ROOTDIR = os.path.abspath(os.path.join(os.path.dirname(__file__)))
@@ -46,7 +46,9 @@ def detokenize(tokens: [int]):
 class XTransformerDataset(Dataset):
     def __init__(self, rootdir):
         self.rootdir = rootdir
-        self.tars = list(sorted(os.listdir(f'{rootdir}/data/')))[:100]
+        self.tars = os.listdir(f'{rootdir}/data/')
+        random.shuffle(self.tars)
+        self.tars = self.tars[:10]
 
         self.training_data = []
         self.load_data()
@@ -146,7 +148,7 @@ class XTransformerModule(pl.LightningModule):
         self.log('val_loss', loss)
 
     def configure_optimizers(self):
-        if DEEPSPEED:
+        if 'offload' in STRATEGY:
             return DeepSpeedCPUAdam(self.parameters())
         else:
             optim = torch.optim.Adam(self.parameters(), lr=LEARNING_RATE)
@@ -171,7 +173,7 @@ def main():
         max_epochs=NUM_EPOCHS,
         accelerator='gpu' if DEVICE == 'cuda' else 'cpu',
         devices=2,
-        strategy="deepspeed_stage_3_offload",
+        strategy=STRATEGY,
         precision="bf16-mixed",
         callbacks=[
             pl.callbacks.ModelCheckpoint(monitor='val_loss', dirpath='checkpoints', save_top_k=1, mode='min'),
