@@ -5,9 +5,18 @@ import platform
 import multiprocessing.dummy
 import tarfile
 import shutil
+import heapq
+from collections import defaultdict
+import os
+import glob
+from collections import defaultdict
+import heapq
+import base64
+import tokenizers
+from pathlib import Path
 
 
-from util import randstring
+from util import randstring, chunkify
 from util import ROOTDIR, TMP, HOMEDIR
 
 CCFLAGS = '-Wall -fcf-protection=none -fno-asynchronous-unwind-tables -fno-unwind-tables -march=znver4 '
@@ -83,6 +92,60 @@ def generate_code():
     #csmithret = p.map(gen_csmith, list(range(ncpu)))
     #ldrgenret = p.map(gen_ldrgen, list(range(ncpu)))
 
+def bbpe_train(vocab_size):
+  i = 0
+  os.makedirs(f'{TMP}/opt',exist_ok=True)
+  os.makedirs(f'{TMP}/unopt',exist_ok=True)
+  for targz in list(os.listdir(f"{ROOTDIR}/data"))[:2]:
+    print(i)
+    i += 1
+    if not targz.endswith('.tar.gz'):
+      continue
+
+    with tarfile.open(f"{ROOTDIR}/data/{targz}", 'r:gz') as tar:
+      for member in tar.getmembers():
+        if not member.name.endswith('opt.cpp.o'):
+          continue
+
+        file_obj = tar.extractfile(member)
+        content = file_obj.read()
+        subfolder = 'unopt' if 'unopt' in member.name else 'opt'
+        with open(f'{TMP}/{subfolder}/{randstring(32)}.o','wb+') as f:
+          f.write(content)
+
+  paths = [str(x) for x in Path(f"{TMP}/unopt").glob("**/*.o")]
+  tokenizer = tokenizers.ByteLevelBPETokenizer()
+  tokenizer.train(files=paths, vocab_size=vocab_size, min_frequency=2, special_tokens=[])
+
+
+def sentencepiece_train(vocab_size):
+  os.makedirs(f'{TMP}',exist_ok=True)
+  i = 0
+  with open(f'{TMP}/sopt_opt.txt','wt+') as optf, open(f'{TMP}/sopt_unopt.txt','wt+') as unoptf:
+    for targz in list(os.listdir(f"{ROOTDIR}/data")):
+      print(i)
+      i+=1
+      if not targz.endswith('.tar.gz'):
+        continue
+
+      with tarfile.open(f"{ROOTDIR}/data/{targz}", 'r:gz') as tar:
+        for member in tar.getmembers():
+          if not member.name.endswith('opt.cpp.o'):
+            continue
+
+          file_obj = tar.extractfile(member)
+          lines = list(chunkify(base64.b64encode(file_obj.read()).decode('ascii'),65000))
+          outf = optf if member.name.endswith('.opt.cpp.o') else unoptf
+          for line in lines:
+            outf.writelines(line + '\n')
+
+  run(f'spm_train --input={TMP}/sopt_unopt.txt --num_threads=32 --train_extremely_large_corpus=1 --max_sentence_length=10000000 --max_sentencepiece_length=16 --unk_id=0 --bos_id=-1 --eos_id=-1 --pad_id=1 --model_type=unigram --model_prefix=encoder --vocab_size=65000 --character_coverage=1.0'.split())
+  run(f'spm_train --input={TMP}/sopt_opt.txt --num_threads=32 --train_extremely_large_corpus=1 --max_sentence_length=10000000 --max_sentencepiece_length=16 --unk_id=0 --bos_id=-1 --eos_id=-1 --pad_id=1 --model_type=unigram --model_prefix=decoder --vocab_size=65000 --character_coverage=1.0'.split())
+
 
 if __name__ == '__main__':
-  generate_code()
+  #generate_code()
+
+  vocab_size = 8192
+  sentencepiece_train(vocab_size)
+  #bbpe_train(vocab_size)

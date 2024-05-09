@@ -1,0 +1,8 @@
+tqdm
+deepspeed
+sentencepiece
+numpy
+tokenizers
+x-transformers
+deepspeed
+mpi4py
