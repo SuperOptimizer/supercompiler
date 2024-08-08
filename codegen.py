@@ -23,18 +23,34 @@ def gen_compile(index):
     # Compile unoptimized version
     clangret = run(f'{clang} -c {path}/func.cpp -o {unopt_objpath} -O0 {CCFLAGS} -include stdint.h'.split(),
                    stdout=PIPE, stderr=PIPE)
+    if len(clangret.stderr) > 0:
+        print(clangret.stderr.decode('utf-8'))
     stripret = run(f'llvm-strip {unopt_objpath}'.split(), stdout=PIPE, stderr=PIPE)
+
+    if len(stripret.stderr) > 0:
+        print(stripret.stderr.decode('utf-8'))
     objcopyret = run(
         f'llvm-objcopy --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {unopt_objpath}'.split(),
         stdout=PIPE, stderr=PIPE)
 
+    if len(objcopyret.stderr) > 0:
+        print(objcopyret.stderr.decode('utf-8'))
+
     # Compile optimized version
     clangret = run(f'{clang} -c {path}/func.cpp -o {opt_objpath} -O3 {CCFLAGS} -include stdint.h'.split(), stdout=PIPE,
                    stderr=PIPE)
+
+    if len(clangret.stderr) > 0:
+        print(clangret.stderr.decode('utf-8'))
     stripret = run(f'llvm-strip {opt_objpath}'.split(), stdout=PIPE, stderr=PIPE)
+    if len(stripret.stderr) > 0:
+        print(stripret.stderr.decode('utf-8'))
+
     objcopyret = run(
         f'llvm-objcopy --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {opt_objpath}'.split(),
         stdout=PIPE, stderr=PIPE)
+    if len(objcopyret.stderr) > 0:
+        print(objcopyret.stderr.decode('utf-8'))
 
     print(f"Generated {path}")
     return (unopt_objpath, opt_objpath)
@@ -44,7 +60,7 @@ def generate_and_save_code(num_progs=10000, output_file='compiler_data.tar.gz'):
     ncpu = multiprocessing.cpu_count()
     i = 0
     with tarfile.open(output_file, "w:gz") as tar:
-        with ProcessPoolExecutor(max_workers=ncpu) as executor:
+        with ProcessPoolExecutor(max_workers=1) as executor:
             futures = [executor.submit(gen_compile, i) for i in range(num_progs)]
             for i, future in enumerate(futures):
                 print(f"{i}")
