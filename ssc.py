@@ -13,8 +13,8 @@ import tarfile
 
 from util import report_cuda_size, timeit, report_model_size, chunkify
 
-ENC_SEQ_LEN = 3072
-DEC_SEQ_LEN = 3072
+ENC_SEQ_LEN = 4096
+DEC_SEQ_LEN = 4096
 BOS = 256
 EOS = 257
 MASK = 258
@@ -28,7 +28,7 @@ BATCH_SIZE=1
 WORLD_SIZE = 1
 LEARNING_RATE = 1e-4
 NUM_BATCHES = 10000
-GENERATE_EVERY=10
+GENERATE_EVERY=1000
 
 DEVICE='cuda'
 
@@ -50,6 +50,7 @@ def cycle(targz):
   i = 0
   training_data = []
   while True:
+    i += 1
     unopt_file = targz.extractfile(f'{i}.unopt.o')
     opt_file = targz.extractfile(f'{i}.opt.o')
     unopt_bytes = unopt_file.read()
@@ -59,6 +60,7 @@ def cycle(targz):
     opt_tokens = tokenize(opt_bytes)
     #print(f"len unopt tokens {len(unopt_tokens)} len opt tokens {len(opt_tokens)} len unopt {len(unopt)} len opt {len(opt)}")
     if len(unopt_tokens) >= ENC_SEQ_LEN or len(opt_tokens) >= DEC_SEQ_LEN:
+
       continue
     opt_tokens.insert(0, DECSTART)
     mask = [True] * len(unopt_tokens)
@@ -106,7 +108,7 @@ def train(rank):
     torch.cuda.set_device(rank)
 
   model = XTransformer(
-    dim=768,
+    dim=512,
     pad_value=PAD,
     tie_token_emb=True,
     enc_attn_flash=True,
@@ -147,7 +149,8 @@ def train(rank):
 
     if i == 0 and DEVICE == 'cuda':
       report_cuda_size()
-    if i % GENERATE_EVERY == 0:
+
+    if i % GENERATE_EVERY == GENERATE_EVERY-1:
       with FSDP.summon_full_params(model, writeback=False, recurse=False):
         #if i > 0:
         #  save_checkpoint(model,  optim, loss, scaler, scheduler)
@@ -165,6 +168,7 @@ def train(rank):
         print_stmt += f"\nactual detokenized:     \n{detokenize(tgt.tolist()[0])}\n"
         print_stmt += f'\nRANK: {rank} end\n'
         print(print_stmt)
+
 
   if WORLD_SIZE > 1:
     torch.distributed.destroy_process_group()

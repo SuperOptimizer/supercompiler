@@ -7,8 +7,15 @@ from util import randstring, ROOTDIR, TMP
 import tarfile
 import shutil
 
+warning_disables = '-Wno-old-style-cast -Wno-c++98-compat-pedantic -Wno-unsafe-buffer-usage -Wno-missing-prototypes -Wno-unused-parameter ' \
+    '-Wno-implicit-int-conversion -Wno-unreachable-code -Wno-tautological-compare -Wno-tautological-value-range-compare -Wno-tautological-type-limit-compare' \
+    '-Wno-tautological-unsigned-zero-compare'
+#shift-sign-overflow
+CCFLAGS = f'-Wall -fcf-protection=none -fno-asynchronous-unwind-tables -fno-unwind-tables -march=znver4 -Weverything -fopenmp {warning_disables}'
 
-CCFLAGS = '-Wall -fcf-protection=none -fno-asynchronous-unwind-tables -fno-unwind-tables -march=znver3 '
+SUFFIX = '-18'
+#SUFFIX = ''
+
 
 
 def gen_compile(index):
@@ -16,7 +23,7 @@ def gen_compile(index):
     os.makedirs(path, exist_ok=False)
     ret = run(f'{ROOTDIR}/bin/{platform.system()}/yarpgen --std=c++ -o {path}'.split(), stdin=PIPE, stdout=PIPE,
               stderr=PIPE)
-    clang = f'clang++ -xc++  '
+    clang = f'clang++{SUFFIX} -xc++  '
     unopt_objpath = f'{path}/{index}.unopt.o'
     opt_objpath = f'{path}/{index}.opt.o'
 
@@ -25,12 +32,12 @@ def gen_compile(index):
                    stdout=PIPE, stderr=PIPE)
     if len(clangret.stderr) > 0:
         print(clangret.stderr.decode('utf-8'))
-    stripret = run(f'llvm-strip {unopt_objpath}'.split(), stdout=PIPE, stderr=PIPE)
+    stripret = run(f'llvm-strip{SUFFIX} {unopt_objpath}'.split(), stdout=PIPE, stderr=PIPE)
 
     if len(stripret.stderr) > 0:
         print(stripret.stderr.decode('utf-8'))
     objcopyret = run(
-        f'llvm-objcopy --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {unopt_objpath}'.split(),
+        f'llvm-objcopy{SUFFIX} --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {unopt_objpath}'.split(),
         stdout=PIPE, stderr=PIPE)
 
     if len(objcopyret.stderr) > 0:
@@ -42,12 +49,12 @@ def gen_compile(index):
 
     if len(clangret.stderr) > 0:
         print(clangret.stderr.decode('utf-8'))
-    stripret = run(f'llvm-strip {opt_objpath}'.split(), stdout=PIPE, stderr=PIPE)
+    stripret = run(f'llvm-strip{SUFFIX} {opt_objpath}'.split(), stdout=PIPE, stderr=PIPE)
     if len(stripret.stderr) > 0:
         print(stripret.stderr.decode('utf-8'))
 
     objcopyret = run(
-        f'llvm-objcopy --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {opt_objpath}'.split(),
+        f'llvm-objcopy{SUFFIX} --remove-section .eh_frame --remove-section .note.GNU-stack --remove-section .comment --remove-section .llvm_addrsig {opt_objpath}'.split(),
         stdout=PIPE, stderr=PIPE)
     if len(objcopyret.stderr) > 0:
         print(objcopyret.stderr.decode('utf-8'))
@@ -60,7 +67,7 @@ def generate_and_save_code(num_progs=10000, output_file='compiler_data.tar.gz'):
     ncpu = multiprocessing.cpu_count()
     i = 0
     with tarfile.open(output_file, "w:gz") as tar:
-        with ProcessPoolExecutor(max_workers=1) as executor:
+        with ProcessPoolExecutor(max_workers=ncpu//2) as executor:
             futures = [executor.submit(gen_compile, i) for i in range(num_progs)]
             for i, future in enumerate(futures):
                 print(f"{i}")
