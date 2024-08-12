@@ -66,22 +66,26 @@ def detokenize(tokens: [int]):
   return bytes(ret)
 
 
-def cycle(targz):
-  i = 0
+def cycle(targz, idx):
   training_data = []
   while True:
-    i += 1
-    unopt_file = targz.extractfile(f'{i}.unopt.o')
-    opt_file = targz.extractfile(f'{i}.opt.o')
+    idx += 1
+    print(f"{idx}")
+    unopt_file = targz.extractfile(f'{idx}.unopt.o')
+    opt_file = targz.extractfile(f'{idx}.opt.o')
     unopt_bytes = unopt_file.read()
     opt_bytes = opt_file.read()
 
     unopt_tokens = spm_tokenize(unopt_bytes)
     opt_tokens = spm_tokenize(opt_bytes)
     #print(f"len unopt tokens {len(unopt_tokens)} len opt tokens {len(opt_tokens)} len unopt {len(unopt)} len opt {len(opt)}")
+    print(f"unopt bytes len {len(unopt_bytes)} opt bytes len {len(opt_bytes)} ")
+    print(f"unopt tokens len {len(unopt_tokens)} opt tokens len {len(opt_tokens)} ")
     if len(unopt_tokens) >= ENC_SEQ_LEN or len(opt_tokens) >= DEC_SEQ_LEN:
 
       continue
+
+
     opt_tokens.insert(0, DECSTART)
     mask = [True] * len(unopt_tokens)
     mask.extend([False] * (ENC_SEQ_LEN - len(unopt_tokens)))
@@ -94,7 +98,7 @@ def cycle(targz):
       mysrc = torch.tensor(list(x[0] for x in batch)).long().to(DEVICE)
       mytgt = torch.tensor(list(x[1] for x in batch)).long().to(DEVICE)
       mysrc_mask = torch.tensor(list(x[2] for x in batch)).bool().to(DEVICE)
-      yield mysrc, mysrc_mask, mytgt
+      yield idx, mysrc, mysrc_mask, mytgt
   print("we should never get here")
 
 
@@ -152,12 +156,12 @@ def train(rank):
   model, optim, loss = load_checkpoint(model, optim, 0)
 
   targz = tarfile.open(f'/{ROOTDIR}/compiler_data.tar.gz','r:gz')
-
+  idx = 0
   for i in tqdm.tqdm(range(NUM_BATCHES), mininterval=10., desc='training'):
     model.train()
     optim.zero_grad()
 
-    src, src_mask, tgt = next(cycle(targz))
+    idx, src, src_mask, tgt = next(cycle(targz, idx))
     with torch.cuda.amp.autocast(dtype=torch.bfloat16):
       loss = model(src, tgt, mask=src_mask)
     scaler.scale(loss).backward()
@@ -175,7 +179,7 @@ def train(rank):
         #if i > 0:
         #  save_checkpoint(model,  optim, loss, scaler, scheduler)
         model.eval()
-        src, src_mask, tgt = next(cycle(targz))
+        idx, src, src_mask, tgt = next(cycle(targz, idx))
         #src, src_mask, tgt  = src[:1], src_mask[:1], tgt[:1]
         start_tokens = torch.tensor([DECSTART]).to(DEVICE)
         #getting an off by one error when trying to pass the mask here because ???
