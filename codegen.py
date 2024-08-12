@@ -6,9 +6,12 @@ from concurrent.futures import ProcessPoolExecutor
 from util import randstring, ROOTDIR, TMP
 import tarfile
 import shutil
+import base64
+
+from util import chunkify
 
 warning_disables = '-Wno-old-style-cast -Wno-c++98-compat-pedantic -Wno-unsafe-buffer-usage -Wno-missing-prototypes -Wno-unused-parameter ' \
-    '-Wno-implicit-int-conversion -Wno-unreachable-code -Wno-tautological-compare -Wno-tautological-value-range-compare -Wno-tautological-type-limit-compare' \
+    '-Wno-implicit-int-conversion -Wno-unreachable-code -Wno-tautological-compare -Wno-tautological-value-range-compare -Wno-tautological-type-limit-compare ' \
     '-Wno-tautological-unsigned-zero-compare'
 #shift-sign-overflow
 CCFLAGS = f'-Wall -fcf-protection=none -fno-asynchronous-unwind-tables -fno-unwind-tables -march=znver4 -Weverything -fopenmp {warning_disables}'
@@ -85,5 +88,28 @@ def generate_and_save_code(num_progs=10000, output_file='compiler_data.tar.gz'):
     print(f"Generated and saved {num_progs} pairs to {output_file}")
 
 
+def sentencepiece_train():
+  os.makedirs(f'{TMP}',exist_ok=True)
+  with open(f'{TMP}/sopt_opt.txt','wt+') as optf, open(f'{TMP}/sopt_unopt.txt','wt+') as unoptf:
+      with tarfile.open(f"{ROOTDIR}/compiler_data.tar.gz", 'r:gz') as tar:
+        i = 0
+        for member in tar.getmembers():
+          i +=1
+          print(i)
+          if not member.name.endswith('opt.o'):
+            continue
+
+          file_obj = tar.extractfile(member)
+          lines = list(chunkify(base64.b64encode(file_obj.read()).decode('ascii'),65000))
+          outf = optf if member.name.endswith('.opt.o') else unoptf
+          for line in lines:
+            outf.writelines(line + '\n')
+  #print("training unopt tokenizer")
+  #run(f'spm_train --input={TMP}/sopt_unopt.txt --num_threads=8 --model_type=unigram --model_prefix=encoder --vocab_size=65000 --character_coverage=1.0'.split())
+  print("training opt tokenizer")
+  run(f'spm_train --input={TMP}/sopt_opt.txt --num_threads=8  --model_type=unigram --model_prefix=decoder --vocab_size=65000 --character_coverage=1.0'.split())
+
 if __name__ == '__main__':
-    generate_and_save_code(num_progs=10000, output_file='compiler_data.tar.gz')
+    pass
+    sentencepiece_train()
+    #generate_and_save_code(num_progs=20000, output_file='compiler_data.tar.gz')

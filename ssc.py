@@ -9,19 +9,21 @@ import random
 import tqdm
 from x_transformers import XTransformer
 import tarfile
+import sentencepiece as spm
+import base64
 
 
-from util import report_cuda_size, timeit, report_model_size, chunkify
+from util import report_cuda_size, timeit, report_model_size
 
 ENC_SEQ_LEN = 4096
 DEC_SEQ_LEN = 4096
-BOS = 256
-EOS = 257
-MASK = 258
-DECSTART = 259
-ENCSTART = 260
-PAD = 261
-VOCAB_SIZE=262
+BOS = 65000
+EOS = 65001
+MASK = 65002
+DECSTART = 65003
+ENCSTART = 65004
+PAD = 65005
+VOCAB_SIZE=65006
 
 
 BATCH_SIZE=1
@@ -34,6 +36,24 @@ DEVICE='cuda'
 
 ROOTDIR = os.path.abspath(os.path.dirname(__file__))
 CHECKPOINT = f"{ROOTDIR}/checkpoint.pt"
+
+
+# Load the SentencePiece tokenizers
+enc_sp = spm.SentencePieceProcessor(model_file='encoder.model')
+dec_sp = spm.SentencePieceProcessor(model_file='decoder.model')
+
+# Tokenization functions
+def spm_tokenize(data: bytes, is_encoder=True):
+  if is_encoder:
+    return enc_sp.encode(base64.b64encode(data).decode('ascii'), out_type=int)
+  else:
+    return dec_sp.encode(base64.b64encode(data).decode('ascii'), out_type=int)
+
+def spm_detokenize(tokens: [int], is_encoder=True):
+  if is_encoder:
+    return enc_sp.decode(tokens)
+  else:
+    return dec_sp.decode(tokens)
 
 def tokenize(inp: bytes):
   return list(inp)
@@ -56,8 +76,8 @@ def cycle(targz):
     unopt_bytes = unopt_file.read()
     opt_bytes = opt_file.read()
 
-    unopt_tokens = tokenize(unopt_bytes)
-    opt_tokens = tokenize(opt_bytes)
+    unopt_tokens = spm_tokenize(unopt_bytes)
+    opt_tokens = spm_tokenize(opt_bytes)
     #print(f"len unopt tokens {len(unopt_tokens)} len opt tokens {len(opt_tokens)} len unopt {len(unopt)} len opt {len(opt)}")
     if len(unopt_tokens) >= ENC_SEQ_LEN or len(opt_tokens) >= DEC_SEQ_LEN:
 
@@ -163,9 +183,9 @@ def train(rank):
         sample = model.generate(src, start_tokens, DEC_SEQ_LEN)
 
         print_stmt = f'\nRANK: {rank} start\n'
-        print_stmt += f"\ninput tokenized:  \n{detokenize(src.tolist()[0])} \n"
-        print_stmt += f"\npredicted detokenized:  \n{detokenize(sample.tolist())}\n"
-        print_stmt += f"\nactual detokenized:     \n{detokenize(tgt.tolist()[0])}\n"
+        print_stmt += f"\ninput tokenized:  \n{spm_detokenize(src.tolist()[0])} \n"
+        print_stmt += f"\npredicted detokenized:  \n{spm_detokenize(sample.tolist())}\n"
+        print_stmt += f"\nactual detokenized:     \n{spm_detokenize(tgt.tolist()[0])}\n"
         print_stmt += f'\nRANK: {rank} end\n'
         print(print_stmt)
 
