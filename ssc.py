@@ -13,6 +13,7 @@ import tarfile
 import sentencepiece as spm
 import base64
 import zstandard as zstd
+import iced_x86
 
 
 from util import report_cuda_size, timeit, report_model_size
@@ -42,13 +43,25 @@ CHECKPOINT = f"{ROOTDIR}/checkpoint.pt"
 
 enc_sp = spm.SentencePieceProcessor(model_file='encoder.model')
 dec_sp = spm.SentencePieceProcessor(model_file='decoder.model')
-with open(f'{ROOTDIR}/encoder_zstd.dictionary', 'rb') as f:
+with open(f'{ROOTDIR}/zstd_enc.dictionary', 'rb') as f:
   enc_zstd = f.read()
 
-with open(f'{ROOTDIR}/decoder_zstd.dictionary', 'rb') as f:
+with open(f'{ROOTDIR}/zstd_dec.dictionary', 'rb') as f:
   dec_zstd = f.read()
 
 
+def disassemble(obj_bytes: bytes):
+  if obj_bytes[:4] == b'\x7fELF':
+    #this is a .o file. we should parse it correctly but for our simple yarpgen code we will just thwack off the header
+    #and start disassembling from what is probably the beginning of .text
+    obj_bytes = obj_bytes[64:]
+    print()
+  decoder = iced_x86.Decoder(64, obj_bytes)
+  formatter = iced_x86.Formatter(iced_x86.FormatterSyntax.NASM)
+  for instr in decoder:
+    disasm = formatter.format(instr)
+    print(disasm)
+  print()
 
 def zstd_tokenize(data: bytes, is_encoder=True) -> [int]:
   dictionary = zstd.ZstdCompressionDict(enc_zstd if is_encoder else dec_zstd)
@@ -98,6 +111,8 @@ def cycle(targz, idx):
     opt_file = targz.extractfile(f'{idx}.opt.o')
     unopt_bytes = unopt_file.read()
     opt_bytes = opt_file.read()
+    disassemble(opt_bytes)
+
 
     unopt_tokens = spm_tokenize(unopt_bytes)
     opt_tokens = spm_tokenize(opt_bytes)
@@ -105,10 +120,7 @@ def cycle(targz, idx):
     print(f"unopt bytes len {len(unopt_bytes)} opt bytes len {len(opt_bytes)} ")
     print(f"unopt tokens len {len(unopt_tokens)} opt tokens len {len(opt_tokens)} ")
     if len(unopt_tokens) >= ENC_SEQ_LEN or len(opt_tokens) >= DEC_SEQ_LEN:
-
       continue
-
-
     opt_tokens.insert(0, DECSTART)
     mask = [True] * len(unopt_tokens)
     mask.extend([False] * (ENC_SEQ_LEN - len(unopt_tokens)))
