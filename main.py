@@ -28,7 +28,7 @@ VOCAB_SIZE = 65006
 BATCH_SIZE = 1
 LEARNING_RATE = 1e-4
 NUM_BATCHES = 10000
-GENERATE_EVERY = 1000
+GENERATE_EVERY = 100
 
 ROOTDIR = os.path.abspath(os.path.dirname(__file__))
 CHECKPOINT_DIR = f"{ROOTDIR}/checkpoints"
@@ -77,11 +77,20 @@ def spm_tokenize(data: bytes, is_encoder=True):
   else:
     return dec_sp.encode(base64.b64encode(data).decode('ascii'), out_type=int)
 
-def spm_detokenize(tokens: [int], is_encoder=True):
-  if is_encoder:
-    return enc_sp.decode(tokens)
-  else:
-    return dec_sp.decode(tokens)
+def spm_detokenize(tokens: [int], is_encoder=True) -> bytes:
+  try:
+      tkns = []
+      for t in tokens:
+          if t < 65000:
+              tkns.append(t)
+
+      if is_encoder:
+        return base64.b64decode(enc_sp.decode(tkns))
+      else:
+        return base64.b64decode(dec_sp.decode(tkns))
+  except:
+    #we can get back a bad base64 string from the inferencer which can throw errors ehre
+    return b'failed to decode tokens'
 
 def tokenize(inp: bytes):
   return list(inp)
@@ -208,4 +217,9 @@ def main():
 
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = False
+    pl.seed_everything(42, workers=True)
     main()
