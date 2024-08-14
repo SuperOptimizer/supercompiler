@@ -135,6 +135,7 @@ def cycle(targz, idx):
       mysrc_mask = torch.tensor(list(x[2] for x in batch)).bool().to(DEVICE)
       yield idx, mysrc, mysrc_mask, mytgt
   print("we should never get here")
+  raise Exception("we should never get here. maybe we ran out of training data")
 
 
 
