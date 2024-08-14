@@ -1,3 +1,4 @@
+from fsspec.compression import compr
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 import os
 import sys
@@ -11,6 +12,7 @@ from x_transformers import XTransformer
 import tarfile
 import sentencepiece as spm
 import base64
+import zstandard as zstd
 
 
 from util import report_cuda_size, timeit, report_model_size
@@ -38,9 +40,30 @@ ROOTDIR = os.path.abspath(os.path.dirname(__file__))
 CHECKPOINT = f"{ROOTDIR}/checkpoint.pt"
 
 
-# Load the SentencePiece tokenizers
 enc_sp = spm.SentencePieceProcessor(model_file='encoder.model')
 dec_sp = spm.SentencePieceProcessor(model_file='decoder.model')
+with open(f'{ROOTDIR}/encoder_zstd.dictionary', 'rb') as f:
+  enc_zstd = f.read()
+
+with open(f'{ROOTDIR}/decoder_zstd.dictionary', 'rb') as f:
+  dec_zstd = f.read()
+
+
+
+def zstd_tokenize(data: bytes, is_encoder=True) -> [int]:
+  dictionary = zstd.ZstdCompressionDict(enc_zstd if is_encoder else dec_zstd)
+  compressor = zstd.ZstdCompressor(dict_data=dictionary)
+  compressed_data = compressor.compress(data)
+  compressed_data = list(compressed_data)
+  return compressed_data
+
+def zstd_detokenize(tokens:[int], is_encoder=True) -> bytes:
+  compressed_data = bytes(tokens)
+  dictionary = zstd.ZstdCompressionDict(enc_zstd if is_encoder else dec_zstd)
+  decompressor = zstd.ZstdDecompressor(dict_data=dictionary)
+  decompressed_data = decompressor.decompress(compressed_data)
+  return decompressed_data
+
 
 # Tokenization functions
 def spm_tokenize(data: bytes, is_encoder=True):

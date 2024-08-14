@@ -7,6 +7,7 @@ from util import randstring, ROOTDIR, TMP
 import tarfile
 import shutil
 import base64
+import zstandard as zstd
 
 from util import chunkify
 
@@ -87,6 +88,28 @@ def generate_and_save_code(num_progs=10000, output_file='compiler_data.tar.gz'):
 
     print(f"Generated and saved {num_progs} pairs to {output_file}")
 
+def zstd_train(dictsize=1024*1024):
+  os.makedirs(f'{TMP}/unopt', exist_ok=True)
+  os.makedirs(f'{TMP}/opt',exist_ok=True)
+  opt_samples = []
+  unopt_samples = []
+  with tarfile.open(f"{ROOTDIR}/compiler_data.tar.gz", 'r:gz') as tar:
+    i = 0
+    for member in tar.getmembers():
+      i += 1
+      print(i)
+      if member.name.endswith('.opt.o'):
+        l = opt_samples
+      elif member.name.endswith('.unopt.o'):
+        l = unopt_samples
+      l.append(tar.extractfile(member).read())
+
+  unopt_dict = zstd.train_dictionary(dictsize, unopt_samples)
+  with open(f'{ROOTDIR}/zstd_enc.dictionary','wb') as f:
+      f.write(unopt_dict.as_bytes())
+  opt_dict = zstd.train_dictionary(dictsize, unopt_samples)
+  with open(f'{ROOTDIR}/zstd_dec.dictionary','wb') as f:
+      f.write(opt_dict.as_bytes())
 
 def sentencepiece_train():
   os.makedirs(f'{TMP}',exist_ok=True)
@@ -111,5 +134,6 @@ def sentencepiece_train():
 
 if __name__ == '__main__':
     pass
-    sentencepiece_train()
+    zstd_train()
+    #sentencepiece_train()
     #generate_and_save_code(num_progs=20000, output_file='compiler_data.tar.gz')
